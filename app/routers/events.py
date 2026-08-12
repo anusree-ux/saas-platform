@@ -1,36 +1,40 @@
 from datetime import datetime, timedelta, timezone
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_tenant, get_db
 from app.models import Event, Tenant
 from app.schemas import EventCreate, EventResponse
+from app.tasks.events import process_event
 
 
 router = APIRouter(prefix="/events", tags=["Events"])
 
 
-@router.post("/", response_model=EventResponse)
+@router.post("/", status_code=202)
 def create_event(
     event_data: EventCreate,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+   
 ):
-    event = Event(
-        tenant_id=tenant.id,
+    event_id = uuid.uuid4()
+
+    # Trigger the Celery task to process the event
+    process_event.delay(
+        event_id=str(event_id),
+        tenant_id=str(tenant.id),
         event_name=event_data.event_name,
         properties=event_data.properties,
-        occurred_at=event_data.occurred_at,
-        received_at=datetime.now(timezone.utc),
+        occurred_at=event_data.occurred_at.isoformat(),
     )
 
-    db.add(event)
-    db.commit()
-    db.refresh(event)
-
-    return event
+    return {
+        "id": event_id,
+        "status": "queued",
+    }
 
 @router.get("/", response_model=list[EventResponse])
 def get_events(
