@@ -4,6 +4,7 @@ import uuid
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models import Event, EventAggregate
+from app.pubsub import publish_tenant_update
 
 
 @celery_app.task(
@@ -25,14 +26,28 @@ def process_event(
         event_uuid = uuid.UUID(event_id)
         occurred_at_dt = datetime.fromisoformat(occurred_at)
 
-        # Calculate the hourly bucket
+        # Check whether this event has already been processed.
+        existing_event = (
+            db.query(Event)
+            .filter(Event.id == event_uuid)
+            .first()
+        )
+
+        if existing_event:
+            print(
+                f"Event {event_id} already exists. "
+                "Skipping duplicate processing."
+            )
+            return
+
+        # Calculate the hourly bucket.
         time_bucket = occurred_at_dt.replace(
             minute=0,
             second=0,
             microsecond=0,
         )
 
-        # 1. Store the raw event
+        # Store the raw event.
         event = Event(
             id=event_uuid,
             tenant_id=tenant_uuid,
@@ -43,7 +58,7 @@ def process_event(
 
         db.add(event)
 
-        # 2. Find the existing hourly aggregate
+        # Find the existing hourly aggregate.
         aggregate = (
             db.query(EventAggregate)
             .filter(
@@ -54,7 +69,7 @@ def process_event(
             .first()
         )
 
-        # 3. Increment existing aggregate or create a new one
+        # Increment existing aggregate or create a new one.
         if aggregate:
             aggregate.count += 1
         else:
@@ -66,13 +81,27 @@ def process_event(
             )
             db.add(aggregate)
 
-        # 4. Commit both changes together
+        # Commit event + aggregate together.
         db.commit()
+
+        # Get the updated aggregate count.
+        count = aggregate.count
+
+        # Notify connected WebSocket clients.
+        publish_tenant_update(
+            tenant_id,
+            event_name,
+            count,
+        )
 
         print(
             f"Event {event_id} stored and aggregate updated "
             f"for tenant {tenant_id}"
         )
+
+    except Exception:
+        db.rollback()
+        raise
 
     finally:
         db.close()

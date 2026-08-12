@@ -1,13 +1,30 @@
-from fastapi import APIRouter, WebSocket
+import asyncio
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.pubsub import subscribe_to_tenant
 
 router = APIRouter()
 
 
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@router.websocket("/ws/{tenant_id}")
+async def websocket_endpoint(websocket: WebSocket, tenant_id: str):
     await websocket.accept()
 
-    await websocket.send_text("WebSocket connected!")
+    pubsub = subscribe_to_tenant(tenant_id)
 
-    while True:
-        await websocket.receive_text()
+    try:
+        while True:
+            message = pubsub.get_message(
+                ignore_subscribe_messages=True,
+                timeout=1,
+            )
+
+            if message:
+                print("Redis message received:", message)
+                await websocket.send_text(message["data"])
+
+            await asyncio.sleep(0.1)
+
+    except WebSocketDisconnect:
+        pubsub.close()
