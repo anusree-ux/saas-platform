@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, String, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -111,5 +111,46 @@ class Event(Base):
             "ix_events_tenant_occurred",
             "tenant_id",
             "occurred_at",
+        ),
+    )
+
+class EventAggregate(Base):
+    __tablename__ = "event_aggregates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id"),
+        nullable=False,
+    )
+
+    event_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    time_bucket: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_aggregates_tenant_event_bucket",
+            "tenant_id",
+            "event_name",
+            "time_bucket",
+            unique=True,
         ),
     )
