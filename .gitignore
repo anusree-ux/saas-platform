@@ -1,5 +1,32 @@
+# Python
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+
+# Environment / secrets
 .env
-.pytest_cache/
+.env.*
+!.env.example
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Celery
+celerybeat-schedule
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
