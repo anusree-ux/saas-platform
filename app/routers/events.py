@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.rate_limiter import check_and_consume
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -18,11 +19,15 @@ router = APIRouter(prefix="/events", tags=["Events"])
 def create_event(
     event_data: EventCreate,
     tenant: Tenant = Depends(get_current_tenant),
-   
 ):
+    if not check_and_consume(str(tenant.id)):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Try again later.",
+        )
+
     event_id = uuid.uuid4()
 
-    # Trigger the Celery task to process the event
     process_event.delay(
         event_id=str(event_id),
         tenant_id=str(tenant.id),
