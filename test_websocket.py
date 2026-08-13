@@ -1,20 +1,37 @@
 import asyncio
+import json
 import websockets
 
-TENANT_ID = "3e3a15b3-0682-4a22-a53a-c734add8dd7d"
+
+API_KEY = "sk_lofsHzUwV_raFiCJftTwuyHPTA2JxfRIzGgycTP02wE"
 
 
 async def main():
-    uri = f"ws://127.0.0.1:8000/ws/{TENANT_ID}"
+    url = f"ws://127.0.0.1:8000/ws?api_key={API_KEY}"
 
-    print(f"Connecting to {uri}...")
+    async with websockets.connect(url) as websocket:
+        print("Connected!")
 
-    async with websockets.connect(uri) as websocket:
-        print("WebSocket connected. Waiting for events...")
+        event = {
+            "event_name": "user.login",
+            "properties": {
+                "user_id": "123",
+                "source": "web",
+            },
+            "occurred_at": "2026-08-13T19:45:00Z",
+        }
 
-        while True:
-            message = await websocket.recv()
-            print("Received:", message)
+        await websocket.send(json.dumps(event))
+
+        # Receive acknowledgement
+        response = await websocket.recv()
+        print("Server response:")
+        print(response)
+
+        # Receive Redis real-time update
+        update = await websocket.recv()
+        print("Real-time update:")
+        print(update)
 
 
 asyncio.run(main())
