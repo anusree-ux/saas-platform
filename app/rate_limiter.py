@@ -1,12 +1,6 @@
 import time
 
-import redis
-
-redis_client = redis.Redis(
-    host="localhost",
-    port=6379,
-    decode_responses=True,
-)
+from app.redis_client import redis_client
 
 BUCKET_CAPACITY = 10
 REFILL_RATE = 10.0
@@ -47,6 +41,8 @@ redis.call("HSET", key,
 
 return {allowed, tokens}
 """
+
+
 def check_and_consume(tenant_id) -> bool:
     key = f"rate_limit:tenant:{tenant_id}"
 

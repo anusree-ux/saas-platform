@@ -1,8 +1,18 @@
+import os
+
 from celery import Celery
+from dotenv import load_dotenv
+
+load_dotenv()
+
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    "amqp://guest:guest@localhost:5672//",
+)
 
 celery_app = Celery(
     "saas_platform",
-    broker="amqp://saas_user:saas_password@localhost:5672//",
+    broker=CELERY_BROKER_URL,
     include=["app.tasks.events"],
 )
 

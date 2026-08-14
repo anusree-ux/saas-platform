@@ -1,10 +1,38 @@
 from datetime import datetime, timezone
 import uuid
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models import Event, EventAggregate
 from app.pubsub import publish_tenant_update
+
+
+def upsert_aggregate(db, tenant_uuid, event_name, time_bucket) -> int:
+    """
+    Atomically increment (or create) the aggregate count for a
+    tenant/event_name/time_bucket using a single Postgres upsert.
+
+    This avoids the read-then-write race condition that occurs when
+    multiple Celery workers process events for the same bucket at
+    the same time.
+    """
+    stmt = pg_insert(EventAggregate).values(
+        tenant_id=tenant_uuid,
+        event_name=event_name,
+        time_bucket=time_bucket,
+        count=1,
+    )
+
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["tenant_id", "event_name", "time_bucket"],
+        set_={"count": EventAggregate.count + 1},
+    ).returning(EventAggregate.count)
+
+    result = db.execute(stmt)
+
+    return result.scalar_one()
 
 
 @celery_app.task(
@@ -64,37 +92,21 @@ def process_event(
 
         db.add(event)
 
-        # Find existing aggregate.
-        aggregate = (
-            db.query(EventAggregate)
-            .filter(
-                EventAggregate.tenant_id == tenant_uuid,
-                EventAggregate.event_name == event_name,
-                EventAggregate.time_bucket == time_bucket,
-            )
-            .first()
+        # Atomically increment (or create) the aggregate row.
+        # This replaces the old query-then-increment-then-commit
+        # pattern, which lost updates under concurrent workers.
+        count = upsert_aggregate(
+            db,
+            tenant_uuid,
+            event_name,
+            time_bucket,
         )
-
-        # Increment or create aggregate.
-        if aggregate:
-            aggregate.count += 1
-        else:
-            aggregate = EventAggregate(
-                tenant_id=tenant_uuid,
-                event_name=event_name,
-                time_bucket=time_bucket,
-                count=1,
-            )
-            db.add(aggregate)
 
         # Commit event + aggregate together.
         db.commit()
 
-        # Refresh objects so generated/default values are available.
+        # Refresh so generated/default values are available.
         db.refresh(event)
-        db.refresh(aggregate)
-
-        count = aggregate.count
 
         # Publish complete event to Redis.
         publish_tenant_update(

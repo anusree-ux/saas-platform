@@ -1,13 +1,6 @@
 import json
 
-import redis
-
-
-redis_client = redis.Redis(
-    host="localhost",
-    port=6379,
-    decode_responses=True,
-)
+from app.redis_client import redis_client
 
 
 def publish_tenant_update(

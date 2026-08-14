@@ -1,9 +1,10 @@
 import asyncio
 import json
+import os
+
 import websockets
 
-
-API_KEY = "sk_lofsHzUwV_raFiCJftTwuyHPTA2JxfRIzGgycTP02wE"
+API_KEY = os.environ["TEST_API_KEY"]
 
 
 async def main():
@@ -24,12 +25,10 @@ async def main():
 
         await websocket.send(json.dumps(event))
 
-        # Receive acknowledgement
         response = await websocket.recv()
         print("Server response:")
         print(response)
 
-        # Receive Redis real-time update
         update = await websocket.recv()
         print("Real-time update:")
         print(update)
