@@ -14,6 +14,7 @@ async def main():
 
         event = {
             "event_name": "user.login",
+            "idempotency_key": "login-test-001",
             "properties": {
                 "user_id": "123",
                 "source": "web",

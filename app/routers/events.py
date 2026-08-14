@@ -32,10 +32,10 @@ def create_event(
         event_id=str(event_id),
         tenant_id=str(tenant.id),
         event_name=event_data.event_name,
+        idempotency_key=event_data.idempotency_key,
         properties=event_data.properties,
         occurred_at=event_data.occurred_at.isoformat(),
     )
-
     return {
         "id": event_id,
         "status": "queued",
@@ -43,13 +43,49 @@ def create_event(
 
 @router.get("/", response_model=list[EventResponse])
 def get_events(
+    event_name: str | None = Query(default=None),
+    since: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
 ):
-    events = (
+    query = (
         db.query(Event)
         .filter(Event.tenant_id == tenant.id)
+    )
+
+    # Filter by event name
+    if event_name:
+        query = query.filter(
+            Event.event_name == event_name
+        )
+
+    # Filter by time range
+    if since:
+        if since == "1h":
+            delta = timedelta(hours=1)
+        elif since == "24h":
+            delta = timedelta(hours=24)
+        elif since == "7d":
+            delta = timedelta(days=7)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid since value. Use 1h, 24h, or 7d.",
+            )
+
+        since_time = datetime.now(timezone.utc) - delta
+
+        query = query.filter(
+            Event.occurred_at >= since_time
+        )
+
+    events = (
+        query
         .order_by(Event.occurred_at.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 

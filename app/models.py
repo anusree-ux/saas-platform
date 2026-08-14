@@ -89,6 +89,11 @@ class Event(Base):
         nullable=False,
     )
 
+    idempotency_key: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
     properties: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,
@@ -111,6 +116,12 @@ class Event(Base):
             "ix_events_tenant_occurred",
             "tenant_id",
             "occurred_at",
+        ),
+        Index(
+            "ix_events_tenant_idempotency",
+            "tenant_id",
+            "idempotency_key",
+            unique=True,
         ),
     )
 

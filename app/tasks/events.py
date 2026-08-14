@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from app.celery_app import celery_app
@@ -16,6 +16,7 @@ def process_event(
     event_id: str,
     tenant_id: str,
     event_name: str,
+    idempotency_key: str,
     properties: dict,
     occurred_at: str,
 ):
@@ -26,39 +27,44 @@ def process_event(
         event_uuid = uuid.UUID(event_id)
         occurred_at_dt = datetime.fromisoformat(occurred_at)
 
-        # Check whether this event has already been processed.
+        # Check idempotency for this tenant.
         existing_event = (
             db.query(Event)
-            .filter(Event.id == event_uuid)
+            .filter(
+                Event.tenant_id == tenant_uuid,
+                Event.idempotency_key == idempotency_key,
+            )
             .first()
         )
 
         if existing_event:
             print(
-                f"Event {event_id} already exists. "
-                "Skipping duplicate processing."
+                f"Duplicate event received. "
+                f"Idempotency key: {idempotency_key}"
             )
             return
 
-        # Calculate the hourly bucket.
+        # Calculate hourly bucket.
         time_bucket = occurred_at_dt.replace(
             minute=0,
             second=0,
             microsecond=0,
         )
 
-        # Store the raw event.
+        # Store raw event.
         event = Event(
             id=event_uuid,
             tenant_id=tenant_uuid,
             event_name=event_name,
+            idempotency_key=idempotency_key,
             properties=properties,
             occurred_at=occurred_at_dt,
+            received_at=datetime.now(timezone.utc),
         )
 
         db.add(event)
 
-        # Find the existing hourly aggregate.
+        # Find existing aggregate.
         aggregate = (
             db.query(EventAggregate)
             .filter(
@@ -69,7 +75,7 @@ def process_event(
             .first()
         )
 
-        # Increment existing aggregate or create a new one.
+        # Increment or create aggregate.
         if aggregate:
             aggregate.count += 1
         else:
@@ -84,14 +90,21 @@ def process_event(
         # Commit event + aggregate together.
         db.commit()
 
-        # Get the updated aggregate count.
+        # Refresh objects so generated/default values are available.
+        db.refresh(event)
+        db.refresh(aggregate)
+
         count = aggregate.count
 
-        # Notify connected WebSocket clients.
+        # Publish complete event to Redis.
         publish_tenant_update(
-            tenant_id,
-            event_name,
-            count,
+            tenant_id=tenant_id,
+            event_id=str(event.id),
+            event_name=event.event_name,
+            properties=event.properties,
+            occurred_at=event.occurred_at.isoformat(),
+            received_at=event.received_at.isoformat(),
+            count=count,
         )
 
         print(

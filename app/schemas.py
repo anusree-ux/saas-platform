@@ -16,6 +16,7 @@ class TenantResponse(BaseModel):
 
 class EventCreate(BaseModel):
     event_name: str
+    idempotency_key: str
     properties: dict[str, Any]
     occurred_at: datetime
 
